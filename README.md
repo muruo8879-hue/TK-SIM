@@ -59,3 +59,7 @@ python build.py --sdk <Android-SDK> --jdk <JDK> --keystore <自己的签名密�
 - 管理器生成的 TikTok 显示名为 **TikTok**。
 - 已使用 TikTok 47.6.3 验证手机本地修补、同签名覆盖和登录数据保留。1.0.1 的名称和日志修改已通过构建与验签，尚未进行设备回归测试。
 - 此版本不承诺兼容未实测的 TikTok 版本。
+
+## 相关链接
+
+- [LINUX DO 社区](https://linux.do/)
