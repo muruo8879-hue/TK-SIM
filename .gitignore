@@ -1,0 +1,7 @@
+*.p12
+*.pfx
+*.jks
+*password*.txt
+*.idsig
+local.properties
+modules/google-web-login/build/

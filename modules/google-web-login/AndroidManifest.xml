@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="local.codex.tiktokgooglefix" android:versionCode="2" android:versionName="1.0.1">
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="36" />
+    <application android:label="TikTok Google Web Login" android:allowBackup="false">
+        <meta-data android:name="xposedmodule" android:value="true" />
+        <meta-data android:name="xposedminversion" android:value="82" />
+        <meta-data android:name="xposeddescription" android:value="Use TikTok's own web Google sign-in on this re-signed test build" />
+    </application>
+</manifest>
