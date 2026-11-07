@@ -1,65 +1,61 @@
 # TK SIM
 
-[简体中文说明](README.zh-CN.md)
+TK SIM 是一个离线 Android 管理器。它使用 [LSPatch](https://github.com/JingMatrix/LSPatch/tree/v1.2)，把 Xposed 模块嵌入用户自己设备上的 TikTok 安装包。生成的 TikTok 保留原包名；继续使用同一私有签名时，Android 可以按正常的同签名升级保留应用数据。
 
-An offline Android manager that embeds Xposed modules into the user's own TikTok APK with [LSPatch](https://github.com/JingMatrix/LSPatch/tree/v1.2). The patched TikTok app keeps its original package name and, when the same private signing key is used, can be updated in place without clearing app data.
+**本仓库不包含 TikTok APK 和签名私钥。** 请使用你自己设备上从可信来源取得的 TikTok 安装包。请不要把从 TikTok 提取的 APK 分包提交到公开仓库。
 
-**This repository does not include TikTok APKs or a signing private key.** Use an official TikTok install on your own device and bring your own signing key. Do not publish an APK set extracted from TikTok.
+## 功能
 
-## What it does
+- **TikTokSIMSpoof v1.0.0**：只在已修补的应用进程内 Hook 部分 `TelephonyManager` 与 `SubscriptionManager` Java 接口。隐藏模式会将部分接口替换为 SIM 不存在、空运营商标识或空订阅列表。不会禁用实体 SIM。
+- **Google 网页登录兼容模块**：本地编写的 Xposed 模块 Hook TikTok 内部方法 `com.bytedance.lobby.google.GoogleAuth.isAvailable()` 并返回 `false`。在测试过的 TikTok 47.6.3 上，这使 TikTok 使用其自己的 Google 网页登录回退流程。模块启动时也会做只读 SIM 接口检查，日志只写入检查结果布尔值，不记录国家、运营商或订阅内容。
 
-The manager bundles two modules:
+模块更新流程：导入模块 APK，点“更新当前 TikTok 的模块”，等待手机本地修补完成，再交给 Android 安装器覆盖安装。模块被嵌入 TikTok APK，不是运行时热更新。管理器没有网络权限，不联网下载 TikTok 或模块，也没有 Root 或 Shizuku 依赖。它只声明 `REQUEST_INSTALL_PACKAGES`，由 Android 显示安装确认。
 
-- **TikTokSIMSpoof v1.0.0** hooks selected `TelephonyManager` and `SubscriptionManager` Java APIs in the patched TikTok process. In the configured hide mode, methods report an absent SIM, empty carrier identifiers, or an empty subscription list. It does not disable the physical SIM.
-- **Google web-login compatibility** is a small local Xposed module. It hooks TikTok's internal `com.bytedance.lobby.google.GoogleAuth.isAvailable()` method and returns `false`; in the tested TikTok 47.6.3 build, this selected TikTok's own Google web sign-in fallback. A read-only SIM API check runs at startup and logs only whether the tested APIs appeared hidden. It does not log carrier, country, or subscription values.
+## 技术原理
 
-To update, import a module APK and tap **Update current TikTok's modules**. The manager repatches the installed TikTok locally and sends the result to Android's package installer. Modules are embedded in the patched APK, not hot-loaded by the manager. No root, Shizuku, network access, update service, or TikTok download is needed. The manager requests only `REQUEST_INSTALL_PACKAGES` and has no `INTERNET` permission.
+1. 从已安装应用读取 TikTok base APK 和各个 split APK；也可以导入完整安装包。
+2. 检查 APK 签名、包名、分包名称和版本。若输入已经修补，会解出其中保留的官方原包，再次核对官方 TikTok 签名。
+3. 检查模块包名及证书。当前构建只接受内置 SIM 模块和本地 Google 模块。
+4. 在本机运行固定 SHA-256 的 LSPatch v1.2 引擎。它将 loader、运行资源和模块 APK 嵌入目标应用；运行时由 LSPatch 的 LSPosed/LSPlant Hook 引擎加载这些模块。
+5. 用用户原有签名密钥签署所有分包，把显示名称设为 `TikTok`，再逐个验签。最后由 Android Package Installer 作为同一应用安装。
 
-## How patching works
+保留 TikTok 数据还要求包名和签名相同、版本不降级，并且新版自身允许数据迁移。私钥只能由应用所有者保管，不应提交或发布。源代码里的公开证书 SHA-256 不是私钥。
 
-1. Read the installed TikTok base APK and split APKs, or import a complete set supplied by the user.
-2. Verify the APK signatures, package name, split names, and version. If the input is already patched, recover its retained original APK and verify TikTok's signer before repatching.
-3. Validate both module package names and signer certificates. This build accepts only the SIM module and the local Google module.
-4. Use the embedded, hash-pinned LSPatch v1.2 engine in embedded-module mode. LSPatch inserts its loader and runtime resources into the app and embeds the two module APKs. LSPatch's runtime uses its LSPosed/LSPlant-based hook engine.
-5. Sign every output split with the user's existing key, set the patched app's display label to `TikTok`, verify all outputs, and ask Android to install them as one package session.
+SIM Hook 只覆盖模块实现的 Java 方法，不隐藏 IP、账号地区、位置或已有 TikTok 数据，也不保证覆盖未 Hook 的原生或 Binder 调用。TikTok 或 Android 更新后需要重新测试。Google 登录只验证过 TikTok 47.6.3。
 
-Android will preserve app data only if package name, signer, version direction, and the app's own data migration rules permit an update. The signing key belongs to the owner. It must be backed up securely and must never be committed or distributed. The public certificate fingerprint in `ApkPolicy.java` is not the private key.
+## 上游仓库与许可证
 
-The SIM hook is limited to the Java methods covered by that module. It does not hide IP address, account region, location, existing TikTok data, or queries made through unhooked native or Binder paths. Compatibility can change with TikTok and Android releases. Google login was verified only on TikTok 47.6.3.
+- [JingMatrix/LSPatch v1.2](https://github.com/JingMatrix/LSPatch/tree/v1.2)：APK 改写、内嵌 loader 和模块运行时；build 487，提交 `0dc50f42503711b14f5e2bb217c2bdd6321ce5be`。GPL-3.0。源码快照在 `third-party/`；其 git 子模块应按上游 `.gitmodules` 和各自许可证取得。
+- [NZM7973/TikTokSIMSpoof v1.0.0](https://github.com/NZM7973/TikTokSIMSpoof/tree/v1.0.0)：内置 SIM 模块，提交 `f08cc9292b52c7b3ac0b4a439ce4bf2d19c4af0a`。MIT，许可文本见 `third-party/TikTokSIMSpoof-LICENSE`。
+- [rovo89/XposedBridge](https://github.com/rovo89/XposedBridge)：两个模块使用的传统 `de.robv.android.xposed` API。上游仓库已归档，其许可证和声明适用于该 API。
+- [Android apksig](https://android.googlesource.com/platform/tools/apksig) 与 [apkzlib](https://android.googlesource.com/platform/tools/apkzlib)：LSPatch 使用的 APK 验签与打包依赖。
+- `modules/google-web-login/`：本项目本地 Google 兼容模块源码。日志有意不输出 SIM 数据，避免 Hook 失败时把运营商信息写进 logcat。
 
-## Upstream projects and attribution
+管理器和本地 Google 模块按 GPL-3.0 发布，见 `LICENSE`。上游部分各自保留原许可。准备公开源码时应保留 `third-party/` 中的许可文件和来源链接，并按 LSPatch 上游说明取得其子模块与依赖源码。
 
-- [JingMatrix/LSPatch](https://github.com/JingMatrix/LSPatch/tree/v1.2) — APK rewriting, embedded loader, and module runtime; upstream release v1.2, build 487, commit `0dc50f42503711b14f5e2bb217c2bdd6321ce5be`. GPL-3.0. Its source archive is in `third-party/`; upstream git submodules and their licenses remain separate.
-- [NZM7973/TikTokSIMSpoof](https://github.com/NZM7973/TikTokSIMSpoof/tree/v1.0.0) — embedded SIM module v1.0.0, commit `f08cc9292b52c7b3ac0b4a439ce4bf2d19c4af0a`. MIT. License text is in `third-party/TikTokSIMSpoof-LICENSE`.
-- [rovo89/XposedBridge](https://github.com/rovo89/XposedBridge) — legacy `de.robv.android.xposed` API used by both modules. The repository is archived; its license and notices apply to that API.
-- [Android apksig](https://android.googlesource.com/platform/tools/apksig) and [apkzlib](https://android.googlesource.com/platform/tools/apkzlib) — Android APK signature verification and archive repacking dependencies used by the patch engine.
-- `modules/google-web-login/` — this repository's local module source. Its readback output is deliberately reduced to one boolean so a failed hook does not put the SIM's carrier data into logcat.
+## 构建
 
-The Android manager and local Google module are distributed under GPL-3.0; see `LICENSE`. Each bundled upstream component keeps its own license. See `third-party/LSPatch-v1.2-source.zip`, the `LSPatch` upstream `.gitmodules`, and the upstream license files when preparing a public source release.
+需要 Python 3、JDK 21、Android SDK 平台 36 和 build-tools 37.0.0。
 
-## Build
-
-Requirements: Python 3, JDK 21, Android SDK platform 36 and build-tools 37.0.0. Set `JAVA_HOME` or pass `--jdk`; `ANDROID_HOME` or `ANDROID_SDK_ROOT` can select the SDK.
-
-Build the manager with a key you control:
+使用自己控制的密钥构建管理器：
 
 ```text
-python build.py --sdk <Android-SDK> --jdk <JDK> --keystore <your-key.p12> --password-file <password-file> --output <TK-SIM-Manager.apk>
+python build.py --sdk <Android-SDK> --jdk <JDK> --keystore <自己的签名密钥.p12> --password-file <密码文件> --output <TK-SIM-Manager.apk>
 ```
 
-The manager pins the patched TikTok signer and the local Google module signer to the certificate configured in `ApkPolicy.LOCAL`. A fork must generate its own key, rebuild and sign the local Google module with that key, then set the fork's public certificate digest there. Never add the private key or password to the repository or a release asset.
+`ApkPolicy.java` 固定校验 TikTok 修补包及本地 Google 模块的签名证书。分支维护者应生成自己的签名密钥，使用同一密钥重建 Google 模块，并把自己的公开证书指纹写入 `ApkPolicy.LOCAL`。不要把私钥或密码写进源码、Git 历史或 Release 附件。
 
-This first source release preserves a single-device prototype's certificate pin. It does not generate keys or accept arbitrary keys at runtime. To use your own key, update `ApkPolicy.LOCAL`, rebuild `assets/modules/google-login.apk` with that key (alias `sim-test`), build the manager, and import the PKCS12 key/password through the manager. The prebuilt Google module is signed by the original prototype author.
+本次源码发布保留了单设备原型的证书固定校验，尚未提供自动生成密钥或运行时接受任意密钥的功能。其他用户需要修改 `ApkPolicy.LOCAL`，用自己的密钥（别名 `sim-test`）重新生成 `assets/modules/google-login.apk`，再编译管理器，最后通过管理器导入 PKCS12 文件及密码。仓库中的预编译 Google 模块使用原型作者的签名。
 
-`--debug-setup` exists only for the initial private-key transfer workflow; distribute the normal build with `debuggable=false`. Do not publish a debug APK.
+可通过 `JAVA_HOME`、`ANDROID_HOME` 或 `ANDROID_SDK_ROOT` 指定工具链。`--debug-setup` 只用于首次导入私有签名密钥；日常发行请构建默认的 `debuggable=false` 版本，不要公开调试 APK。
 
-Build the local Google module separately with `modules/google-web-login/build.ps1`, providing the same key and alias `sim-test`. It depends on the Xposed API 82 jar available from [api.xposed.info](https://api.xposed.info/de/robv/android/xposed/api/82/api-82.jar).
+使用 `modules/google-web-login/build.ps1` 可以单独编译 Google 模块，签名别名为 `sim-test`。编译需提供 Xposed API 82 JAR，可从 [api.xposed.info](https://api.xposed.info/de/robv/android/xposed/api/82/api-82.jar) 取得。
 
-To run the small policy check, compile `tests/PolicyTest.java` together with `ApkPolicy.java` against the LSPatch release jar. It uses real TikTok APK fixtures, which are intentionally not included in this repository.
+`tests/PolicyTest.java` 是小型验签与输入校验测试。运行需自行提供原始 TikTok APK 测试夹具；仓库不包含 TikTok 安装包。
 
-## Version notes
+## 版本与验证
 
-- Manager 1.0.1 is named **TK SIM**.
-- TikTok generated by this manager is named **TikTok**.
-- Google module 1.0.1 avoids logging SIM identifiers during its readback check.
-- Existing phone setup was tested with TikTok 47.6.3. This source and the bundled modules are not a claim of compatibility with every TikTok release.
+- 管理器 1.0.1 的显示名为 **TK SIM**。
+- 管理器生成的 TikTok 显示名为 **TikTok**。
+- 已使用 TikTok 47.6.3 验证手机本地修补、同签名覆盖和登录数据保留。1.0.1 的名称和日志修改已通过构建与验签，尚未进行设备回归测试。
+- 此版本不承诺兼容未实测的 TikTok 版本。
